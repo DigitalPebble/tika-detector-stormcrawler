@@ -27,6 +27,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.apache.commons.io.ByteOrderMark;
+import org.apache.commons.io.IOUtils;
 import org.apache.commons.io.input.BOMInputStream;
 import org.apache.tika.detect.EncodingDetector;
 import org.apache.tika.metadata.Metadata;
@@ -35,23 +36,49 @@ import org.jsoup.nodes.Element;
 import org.jsoup.parser.Parser;
 import org.jsoup.select.Elements;
 
-import com.ibm.icu.text.*;
+import com.ibm.icu.text.CharsetDetector;
+import com.ibm.icu.text.CharsetMatch;
+
 /**
  * Wraps the Charset identification logic from StormCrawler.
  */
 public class SCCharsetDetector implements EncodingDetector {
 
-	public static final Charset DEFAULT_CHARSET = StandardCharsets.UTF_8;
+	private static final Charset DEFAULT_CHARSET = StandardCharsets.UTF_8;
 
 	private static final Pattern charsetPattern = Pattern.compile("(?i)\\bcharset=\\s*(?:[\"'])?([^\\s,;\"']*)");
 
-    public static final String CONTENT_TYPE = "content-type";
+	private static final String CONTENT_TYPE = "content-type";
+
+	private boolean fastMethod = false;
+
+	private int maxLength = 0;
 
 	public Charset detect(InputStream input, Metadata metadata) throws IOException {
-		// TODO Auto-generated method stub
-		return null;
+		if (input == null) {
+			return null;
+		}
+		byte[] content = IOUtils.toByteArray(input);
+		String charset = getCharsetFast(metadata, content, maxLength);
+		return Charset.forName(charset);
 	}
-    
+
+	public boolean isFastMethod() {
+		return fastMethod;
+	}
+
+	public void setFastMethod(boolean fastMethod) {
+		this.fastMethod = fastMethod;
+	}
+
+	public int getMaxLength() {
+		return maxLength;
+	}
+
+	public void setMaxLength(int maxLength) {
+		this.maxLength = maxLength;
+	}
+
 	/**
 	 * Identifies the charset of a document based on the following logic: guess from
 	 * the ByteOrderMark - else return any charset specified in the http headers if
@@ -135,7 +162,8 @@ public class SCCharsetDetector implements EncodingDetector {
 	/** Returns the charset declared by the server if any */
 	private static String getCharsetFromHTTP(Metadata metadata) {
 		String ct = metadata.get(CONTENT_TYPE);
-		if (ct == null) return null;
+		if (ct == null)
+			return null;
 		return getCharsetFromContentType(ct);
 	}
 
