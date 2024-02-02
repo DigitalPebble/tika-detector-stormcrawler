@@ -21,12 +21,12 @@ import java.io.InputStream;
 import java.nio.charset.Charset;
 import java.nio.charset.IllegalCharsetNameException;
 import java.nio.charset.StandardCharsets;
+import java.nio.charset.UnsupportedCharsetException;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.apache.commons.io.ByteOrderMark;
-import org.apache.commons.io.IOUtils;
 import org.apache.commons.io.input.BOMInputStream;
 import org.apache.tika.detect.EncodingDetector;
 import org.apache.tika.metadata.Metadata;
@@ -51,20 +51,21 @@ public class SCCharsetDetector implements EncodingDetector {
 
 	private boolean fastMethod = false;
 
-	private int maxLength = -1;
+	private int markLimit = 16 * 1024;
+
 
 	public Charset detect(InputStream input, Metadata metadata) throws IOException {
 		if (input == null) {
 			return null;
 		}
-		// TODO mark and reset input stream
-		byte[] content = IOUtils.toByteArray(input);
-		
-		// trim to maxLength once and for all
-		if (maxLength != -1 && maxLength < content.length) {
-			content = IOUtils.toByteArray(input);
+		input.mark(markLimit);
+		byte[] content;
+		try {
+			content = input.readNBytes(markLimit);
+		} finally {
+			input.reset();
 		}
-		
+
 		String charset = null;
 		if (isFastMethod()) {
 			charset = getCharsetFast(metadata, content);
@@ -72,9 +73,13 @@ public class SCCharsetDetector implements EncodingDetector {
 		else {
 			charset = getCharset(metadata, content);
 		}
-		return Charset.forName(charset);
+		try {
+			return Charset.forName(charset);
+		} catch (UnsupportedCharsetException e) {
+			return DEFAULT_CHARSET;
+		}
 	}
-	
+
 	public boolean isFastMethod() {
 		return fastMethod;
 	}
@@ -83,12 +88,12 @@ public class SCCharsetDetector implements EncodingDetector {
 		this.fastMethod = fastMethod;
 	}
 
-	public int getMaxLength() {
-		return maxLength;
+	public int getMarkLimit() {
+		return markLimit;
 	}
 
-	public void setMaxLength(int maxLength) {
-		this.maxLength = maxLength;
+	public void setMarkLimit(int markLimit) {
+		this.markLimit = markLimit;
 	}
 
 	/**
