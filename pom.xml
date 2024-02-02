@@ -90,6 +90,7 @@ permissions and limitations
 										<exclude>META-INF/*.DSA</exclude>
 										<exclude>META-INF/*.RSA</exclude>
 										<exclude>META-INF/*.txt</exclude>
+										<exclude>META-INF/MANIFEST.MF</exclude>
 									</excludes>
 								</filter>
 							</filters>
