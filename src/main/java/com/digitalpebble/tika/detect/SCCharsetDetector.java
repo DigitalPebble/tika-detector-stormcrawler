@@ -27,7 +27,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.apache.commons.io.ByteOrderMark;
-import org.apache.commons.io.IOUtils;
 import org.apache.commons.io.input.BOMInputStream;
 import org.apache.tika.detect.EncodingDetector;
 import org.apache.tika.metadata.Metadata;
@@ -60,9 +59,9 @@ public class SCCharsetDetector implements EncodingDetector {
 			return null;
 		}
 		input.mark(markLimit);
-		byte[] content = null;
+		byte[] content;
 		try {
-			content = IOUtils.toByteArray(input, markLimit);
+			content = input.readNBytes(markLimit);
 		} finally {
 			input.reset();
 		}
