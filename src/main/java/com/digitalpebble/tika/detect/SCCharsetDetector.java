@@ -21,7 +21,6 @@ import java.io.InputStream;
 import java.nio.charset.Charset;
 import java.nio.charset.IllegalCharsetNameException;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -52,17 +51,30 @@ public class SCCharsetDetector implements EncodingDetector {
 
 	private boolean fastMethod = false;
 
-	private int maxLength = 0;
+	private int maxLength = -1;
 
 	public Charset detect(InputStream input, Metadata metadata) throws IOException {
 		if (input == null) {
 			return null;
 		}
+		// TODO mark and reset input stream
 		byte[] content = IOUtils.toByteArray(input);
-		String charset = getCharsetFast(metadata, content, maxLength);
+		
+		// trim to maxLength once and for all
+		if (maxLength != -1 && maxLength < content.length) {
+			content = IOUtils.toByteArray(input);
+		}
+		
+		String charset = null;
+		if (isFastMethod()) {
+			charset = getCharsetFast(metadata, content);
+		}
+		else {
+			charset = getCharset(metadata, content);
+		}
 		return Charset.forName(charset);
 	}
-
+	
 	public boolean isFastMethod() {
 		return fastMethod;
 	}
@@ -89,8 +101,7 @@ public class SCCharsetDetector implements EncodingDetector {
 	 *
 	 * @since 1.18
 	 */
-	public static String getCharsetFast(final Metadata metadata, final byte[] content,
-			final int maxLengthCharsetDetection) {
+	public static String getCharsetFast(final Metadata metadata, final byte[] content) {
 
 		// let's look at the BOM first
 		String charset = getCharsetFromBOM(content);
@@ -104,13 +115,13 @@ public class SCCharsetDetector implements EncodingDetector {
 			return charset;
 		}
 
-		charset = getCharsetFromMeta(content, maxLengthCharsetDetection);
+		charset = getCharsetFromMeta(content);
 		if (charset != null) {
 			return charset;
 		}
 
 		// let's guess from the text without a hint
-		charset = getCharsetFromText(content, null, maxLengthCharsetDetection);
+		charset = getCharsetFromText(content, null);
 		if (charset != null) {
 			return charset;
 		}
@@ -125,7 +136,7 @@ public class SCCharsetDetector implements EncodingDetector {
 	 * and the html metadata then use it - otherwise use ICU's charset detector to
 	 * make an educated guess and if that fails too returns UTF-8.
 	 */
-	public static String getCharset(Metadata metadata, byte[] content, int maxLengthCharsetDetection) {
+	public static String getCharset(Metadata metadata, byte[] content) {
 
 		// let's look at the BOM first
 		String BOMCharset = getCharsetFromBOM(content);
@@ -135,7 +146,7 @@ public class SCCharsetDetector implements EncodingDetector {
 
 		// then look at what we get from HTTP headers and HTML content
 		String httpCharset = getCharsetFromHTTP(metadata);
-		String htmlCharset = getCharsetFromMeta(content, maxLengthCharsetDetection);
+		String htmlCharset = getCharsetFromMeta(content);
 
 		// both exist and agree
 		if (httpCharset != null && htmlCharset != null && httpCharset.equalsIgnoreCase(htmlCharset)) {
@@ -150,7 +161,7 @@ public class SCCharsetDetector implements EncodingDetector {
 			hintCharset = htmlCharset;
 		}
 
-		String textCharset = getCharsetFromText(content, hintCharset, maxLengthCharsetDetection);
+		String textCharset = getCharsetFromText(content, hintCharset);
 		if (textCharset != null) {
 			return textCharset;
 		}
@@ -183,7 +194,7 @@ public class SCCharsetDetector implements EncodingDetector {
 	/**
 	 * Use a third party library as last resort to guess the charset from the bytes.
 	 */
-	private static String getCharsetFromText(byte[] content, String declaredCharset, int maxLengthCharsetDetection) {
+	private static String getCharsetFromText(byte[] content, String declaredCharset) {
 		String charset = null;
 		// filter HTML tags
 		CharsetDetector charsetDetector = new CharsetDetector();
@@ -191,12 +202,7 @@ public class SCCharsetDetector implements EncodingDetector {
 		// give it a hint
 		if (declaredCharset != null)
 			charsetDetector.setDeclaredEncoding(declaredCharset);
-		// trim the content of the text for the detection
-		byte[] subContent = content;
-		if (maxLengthCharsetDetection != -1 && content.length > maxLengthCharsetDetection) {
-			subContent = Arrays.copyOfRange(content, 0, maxLengthCharsetDetection);
-		}
-		charsetDetector.setText(subContent);
+		charsetDetector.setText(content);
 		try {
 			CharsetMatch charsetMatch = charsetDetector.detect();
 			charset = validateCharset(charsetMatch.getName());
@@ -210,13 +216,10 @@ public class SCCharsetDetector implements EncodingDetector {
 	 * Attempt to find a META tag in the HTML that hints at the character set used
 	 * to write the document.
 	 */
-	private static String getCharsetFromMeta(byte buffer[], int maxlength) {
+	private static String getCharsetFromMeta(byte buffer[]) {
 		// convert to UTF-8 String -- which hopefully will not mess up the
 		// characters we're interested in...
 		int len = buffer.length;
-		if (maxlength > 0 && maxlength < len) {
-			len = maxlength;
-		}
 		String html = new String(buffer, 0, len, DEFAULT_CHARSET);
 
 		// fast search for e.g. <meta charset="utf-8">
@@ -227,9 +230,9 @@ public class SCCharsetDetector implements EncodingDetector {
 			int end = html.indexOf('"', start + 15);
 			// https://github.com/DigitalPebble/storm-crawler/issues/870
 			// try on a slightly larger section of text if it is trimmed
-			if (end == -1 && ((maxlength + 10) < buffer.length)) {
-				return getCharsetFromMeta(buffer, maxlength + 10);
-			}
+//			if (end == -1 && ((maxlength + 10) < buffer.length)) {
+//				return getCharsetFromMeta(buffer, maxlength + 10);
+//			}
 			if (end == -1) {
 				// there is an open tag meta but not closed = we have broken content!
 				return null;
